@@ -2353,6 +2353,49 @@ namespace SQLite
 		readonly Column[] _insertColumns;
 		readonly Column[] _insertOrReplaceColumns;
 
+		private List<PropertyInfo> GetRelevantProperties()
+		{
+			var props = new List<PropertyInfo> ();
+			var baseType = MappedType;
+			var propNames = new HashSet<string> ();
+			while (baseType != typeof (object)) {
+				var ti = baseType.GetTypeInfo ();
+				var newProps = (
+					from p in ti.DeclaredProperties
+					where
+						!propNames.Contains (p.Name) &&
+						(IsInterfaceImplementation(p) ||
+						(p.CanRead && p.CanWrite &&
+						(p.GetMethod != null) && (p.SetMethod != null) &&
+						(p.GetMethod.IsPublic && p.SetMethod.IsPublic) &&
+						(!p.GetMethod.IsStatic) && (!p.SetMethod.IsStatic)))
+					select p).ToList ();
+				foreach (var p in newProps) {
+					propNames.Add (p.Name);
+				}
+				props.AddRange (newProps);
+				baseType = ti.BaseType;
+			}
+
+			return props;
+
+			bool IsInterfaceImplementation(PropertyInfo pi)
+			{
+				if(pi.GetMethod is null || pi.SetMethod is null) {
+					return false;
+				}
+
+				// virtual, private and final seem to hit all the marks for interface implementation
+				// without false positives
+				return 
+					pi.CanRead && pi.CanWrite &&
+					pi.GetMethod.IsVirtual && pi.GetMethod.IsFinal && 
+					pi.GetMethod.IsPrivate && !pi.GetMethod.IsStatic && 					
+					pi.SetMethod.IsVirtual && pi.SetMethod.IsFinal && 
+					pi.SetMethod.IsPrivate && !pi.SetMethod.IsStatic;
+			}
+		}
+
 		public TableMapping (Type type, CreateFlags createFlags = CreateFlags.None)
 		{
 			MappedType = type;
@@ -2367,27 +2410,8 @@ namespace SQLite
 
 			TableName = (tableAttr != null && !string.IsNullOrEmpty (tableAttr.Name)) ? tableAttr.Name : MappedType.Name;
 			WithoutRowId = tableAttr != null ? tableAttr.WithoutRowId : false;
-
-			var props = new List<PropertyInfo> ();
-			var baseType = type;
-			var propNames = new HashSet<string> ();
-			while (baseType != typeof (object)) {
-				var ti = baseType.GetTypeInfo ();
-				var newProps = (
-					from p in ti.DeclaredProperties
-					where
-						!propNames.Contains (p.Name) &&
-						p.CanRead && p.CanWrite &&
-						(p.GetMethod != null) && (p.SetMethod != null) &&
-						(p.GetMethod.IsPublic && p.SetMethod.IsPublic) &&
-						(!p.GetMethod.IsStatic) && (!p.SetMethod.IsStatic)
-					select p).ToList ();
-				foreach (var p in newProps) {
-					propNames.Add (p.Name);
-				}
-				props.AddRange (newProps);
-				baseType = ti.BaseType;
-			}
+			
+			var props = GetRelevantProperties ();
 
 			var cols = new List<Column> ();
 			foreach (var p in props) {

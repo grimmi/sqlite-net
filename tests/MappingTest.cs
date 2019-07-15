@@ -139,6 +139,29 @@ namespace SQLite.Tests
 		}
 
 		#endregion
+
+		#region Issue #853
+
+		public interface ISomeInterface
+		{
+			int Id { get; set; }
+		}
+
+		public class SomeClassImplementingISomeInterface : ISomeInterface
+		{
+			int ISomeInterface.Id { get; set; }
+			public string Value { get; set; }
+		}
+
+		[Test]
+		public void Issue853()
+		{
+			var mapping = new TableMapping (typeof (SomeClassImplementingISomeInterface));
+
+			Assert.AreEqual (2, mapping.Columns.Length);
+		}
+
+		#endregion
 	}
 }
 
